@@ -10,6 +10,17 @@
 
 ---
 
+How To Run Critical Service Section: for Demo
+
+# Terminal 1 — start the monitor first
+python3 files/monitor.py
+
+# Terminal 2 — start the critical service
+python3 files/service.py
+# optional: --host 127.0.0.1 --port 9999 --interval 1.0 --crash-prob 0.08 --cycle 1.0
+
+
+
 ## 📌 1. Project Objective & Service Overview
 
 ### Chosen Security Domain: Authentication & Session Ticket Service (`service.py`)
