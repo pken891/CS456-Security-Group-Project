@@ -1,49 +1,59 @@
+Peter Kenoian, Cameron Will, Cameron Hugg
+CS456-001 MP1.1
+MP1.1 Mini Project Part 1 Report
+
+
 Service Overview (Cameron Will):
 The critical service, auth-ticket-daemon (files/service.py), simulates an authentication server similar to a Kerberos KDC. Each cycle, its main thread receives a simulated login request, checks the credentials against salted password hashes, and issues a 128-bit session ticket on success. A separate background thread sends a JSON heartbeat over UDP to the monitor at 127.0.0.1:9999 once per second (T = 1.0 s). Because it runs apart from the authentication loop, slow logins cannot delay heartbeats and trigger false alarms. To model an unpredictable production failure without a fixed crash point, every cycle checks random.random() < 0.08. When this fires, the service logs a fatal segmentation-fault message about a malformed authentication payload, with UTC and local timestamps, the cycle number, and the last heartbeat number sent. It then calls os._exit(1), which ends the whole process at once, including the heartbeat thread. The heartbeats simply stop, so the monitor sees only silence, as it would after a real crash. Each cycle lasts about one second, so the expected uptime is 1/0.08 ≈ 12.5 s. In our test runs, the service crashed after 5 to 30 s, and the monitor raised its alert 3.01 s after the last heartbeat.
 
 Execution & Setup Instructions (Cameron Will):
 
-Requirements: Python 3.9 or newer; standard library only (nothing to install or compile).
-Run every command from the repository root, each in its own terminal window.
+Requirements: Python 3.9 or newer; standard library only (nothing to install or compile). Run every command from the repository root, each in its own terminal window.
 
-  git clone https://github.com/pken891/CS456-Security-Group-Project.git
-  cd CS456-Security-Group-Project
+git clone https://github.com/pken891/CS456-Security-Group-Project.git
+cd CS456-Security-Group-Project
 
 Normal operation (fault detection)
-  Terminal 1 - start the monitor first:
-    python3 files/monitor.py
-  Terminal 2 - start the critical service:
-    python3 files/service.py
-  The monitor prints "[OK] Heartbeat #n" once per second. The service crashes at a
-  random point (about 12.5 s on average); 3 s after the last beat the monitor prints
-  "[CRITICAL ALERT] FAULT DETECTED" and keeps running. Re-run service.py to see it
-  report RECOVERY. Stop any process with Ctrl+C.
+Terminal 1 - start the monitor first: python3 files/monitor.py
+Terminal 2 - start the critical service: python3 files/service.py
 
-  Optional settings (defaults shown):
-    python3 files/monitor.py --port 9999 --interval 1.0 --threshold 3
-    python3 files/service.py --port 9999 --interval 1.0 --crash-prob 0.08 --cycle 1.0
+The monitor prints "[OK] Heartbeat #n" once per second. The service crashes at a random point (about 12.5 s on average); 3 s after the last beat the monitor prints "[CRITICAL ALERT] FAULT DETECTED" and keeps running. Re-run service.py to see it report RECOVERY. Stop any process with Ctrl+C.
+
+Optional settings (defaults shown):
+python3 files/monitor.py --port 9999 --interval 1.0 --threshold 3
+python3 files/service.py --port 9999 --interval 1.0 --crash-prob 0.08 --cycle 1.0
+
+
 
 Attack 1 - Heartbeat spoofing
-  Terminal 1:  python3 files/monitor.py
-  Terminal 2:  python3 files/attacker.py --attack spoof
-  No real service is running, yet the monitor reports auth-ticket-daemon as healthy.
+Terminal 1:  python3 files/monitor.py
+Terminal 2:  python3 files/attacker.py --attack spoof
+
+No real service is running, yet the monitor reports auth-ticket-daemon as healthy.
 
 Attack 2 - Replay
-  Step 1, capture a real beat:
-    Terminal 1:  python3 files/attacker.py --attack capture
-    Terminal 2:  python3 files/service.py --port 9998
-    (the attacker saves one genuine beat to captured_beat.bin and exits;
-     stop the service with Ctrl+C)
-  Step 2, replay it:
-    Terminal 1:  python3 files/monitor.py
-    Terminal 2:  python3 files/attacker.py --attack replay
-  The monitor accepts the same stale beat (seq=1) over and over and never raises an alert.
+Step 1, capture a real beat:
+Terminal 1:  python3 files/attacker.py --attack capture
+Terminal 2:  python3 files/service.py --port 9998
+(the attacker saves one genuine beat to captured_beat.bin and exits; stop the service with Ctrl+C)
+
+Step 2, replay it:
+Terminal 1:  python3 files/monitor.py
+Terminal 2:  python3 files/attacker.py --attack replay
+
+The monitor accepts the same stale beat (seq=1) over and over and never raises an alert.
 
 Logs: service -> logs/service.log, monitor -> monitor_incidents.log
 (On Windows, use "python" instead of "python3".)
 
-Architectural Justification (Peter Kenoian):
-For our fault-detection architecture, our team implemented a Push-Based (Unidirectional Notification) heartbeat pattern over connectionless UDP (SOCK_DGRAM on 127.0.0.1:9999) rather than a Pull-Based (Ping-Echo) model. In this design, the critical Authentication/Ticket Service autonomously emits JSON liveness datagrams from a decoupled background thread, which cuts socket traffic in half compared to bidirectional ping-echo queries and ensures an abrupt process crash (os._exit(1)) never causes broken-pipe exceptions or crashes in the independent monitor. To calibrate timing, we configured a heartbeat emission interval of T=1.0s (1000ms), a missed-beat threshold of N=3 consecutive beats, and a sliding timeout window of W=3.0s (3000ms, where W=NT). This parameter calibration balances a fast 3.0-second Mean Time To Detect (MTTD) and minimal CPU/socket overhead against false-positive resilience, allowing the monitor to tolerate up to two delayed or dropped packets from transient OS thread-scheduling jitter before raising a critical crash alert.
 
-Adversarel Audit Summary (Cameron Hugg):
-  The baseline heartbeat channel is both unauthenticated and stateless, and the adversarial audit, which is held in “attackers.py” succeeded in both successful attacks against it.  The monitor accepts any UDP datagram sent to  the IP address “127.0.0.1:9999”  as a valid liveness signal as long as it its a JSON with the “HEARTBEAT” type. The monitor makes no effort to validate or authenticate the user due to the lack of a shared secret, HMAC, or digital signature. It also never filters on source address, never validates the payload’s timestamp field for freshness, and never requires the seq number to increase. Liveness is instead judged solely by the arrival time of packets, so anyone that can reach the loopback port is implicitly trusted. During the first attack, Heartbeat Spoofing, the auditor/attacker forges HEARTBEAT datagrams that match the service’s exact JSON schema and streams them to the monitor once per second. In our test runs the monitor reported the auth-ticket-daemon as HEALTHY and never raised a fault alert, even with no real service process running at all, because it cannot distinguish forged beats from genuine ones. In the second attack, Replay / Tampering, the auditor first captures a single legitimate heartbeat off the wire and then retransmits those exact bytes on a loop after the real service has been terminated. Due to the fact that the monitor performs no freshness or sequence-ordering checks, that means it accepts the recycled packet indefinitely. in testing it continued logging [OK] Heartbeat #1 with an identical, stale PktTime on every beat and never detected the crash. This shows that the timestamp field embedded into the payload isn’t actually effective.It travels on the wire but is never evaluated, so replaying stale status data is enough to mask downtime. Both of these attacks exploited the lack of authentication and state on the detection channel. The straightforward hardening is to add a pre-shared-key HMAC over each payload (defeating spoofing, since the attacker cannot compute a valid tag) together with a monotonically increasing nonce or a signed, monitor-verified timestamp (defeating replay, since stale or out-of-order beats would be rejected).
+
+
+
+Architectural Parameter Justification:
+
+For our fault-detection architecture, our team implemented a Push-Based (Unidirectional Notification) heartbeat pattern over connectionless UDP (SOCK_DGRAM on 127.0.0.1:9999) rather than a Pull-Based (Ping-Echo) model. In this design, the critical Authentication/Ticket Service autonomously emits JSON liveness datagrams from a decoupled background thread, which cuts socket traffic in half compared to bidirectional ping-echo queries and ensures an abrupt process crash (os._exit(1)) never causes broken-pipe exceptions or crashes in the independent monitor. To calibrate timing, we configured a heartbeat emission interval of T=1.0s (1000ms), a missed-beat threshold of N=3 consecutive beats, and a sliding timeout window of W=3.0s (3000ms, where W=NT). This parameter calibration balances a fast 3.0-second Mean Time To Detect (MTTD) and minimal CPU/socket overhead against false-positive resilience, allowing the monitor to tolerate up to two delayed or dropped packets from transient OS thread-scheduling jitter before raising a critical crash alert. 
+
+
+Adversarial Audit Summary:
+	The baseline heartbeat channel is both unauthenticated and stateless, and the adversarial audit, which is held in “attackers.py” succeeded in both successful attacks against it.  The monitor accepts any UDP datagram sent to  the IP address “127.0.0.1:9999”  as a valid liveness signal as long as it its a JSON with the “HEARTBEAT” type. The monitor makes no effort to validate or authenticate the user due to the lack of a shared secret, HMAC, or digital signature. It also never filters on source address, never validates the payload’s timestamp field for freshness, and never requires the seq number to increase. Liveness is instead judged solely by the arrival time of packets, so anyone that can reach the loopback port is implicitly trusted. During the first attack, Heartbeat Spoofing, the auditor/attacker forges HEARTBEAT datagrams that match the service’s exact JSON schema and streams them to the monitor once per second. In our test runs the monitor reported the auth-ticket-daemon as HEALTHY and never raised a fault alert, even with no real service process running at all, because it cannot distinguish forged beats from genuine ones. In the second attack, Replay / Tampering, the auditor first captures a single legitimate heartbeat off the wire and then retransmits those exact bytes on a loop after the real service has been terminated. Due to the fact that the monitor performs no freshness or sequence-ordering checks, that means it accepts the recycled packet indefinitely. in testing it continued logging [OK] Heartbeat #1 with an identical, stale PktTime on every beat and never detected the crash. This shows that the timestamp field embedded into the payload isn’t actually effective.It travels on the wire but is never evaluated, so replaying stale status data is enough to mask downtime. Both of these attacks exploited the lack of authentication and state on the detection channel. The straightforward hardening is to add a pre-shared-key HMAC over each payload (defeating spoofing, since the attacker cannot compute a valid tag) together with a monotonically increasing nonce or a signed, monitor-verified timestamp (defeating replay, since stale or out-of-order beats would be rejected).
