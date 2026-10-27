@@ -16,4 +16,9 @@
 - Created GitHub repository
 
 ## Cameron Hugg — Adversarial Security Auditor
--
+- Designed and implemented `files/attacker.py`: a standalone adversarial audit utility that attacks the heartbeat monitor over UDP at 127.0.0.1:9999, with command-line flags (`--attack`, `--host`, `--port`, `--interval`, `--count`) and no external dependencies.
+- Implemented Attack 1 (Heartbeat Spoofing): forges `HEARTBEAT` datagrams matching the service's JSON schema and streams them to the monitor, keeping it reporting HEALTHY even when no real service is running.
+- Implemented Attack 2 (Replay/Tampering) plus a capture helper: records one genuine heartbeat and retransmits those exact bytes on a loop, masking a crashed service because the monitor performs no freshness or sequence-ordering checks.
+- Tested both attacks end to end against the team's `monitor.py` and `service.py`, confirming each successfully suppressed the monitor's crash alert, and documented the results.
+- Wrote the Adversarial Audit Summary section of the report, analyzing the unauthenticated, stateless heartbeat channel and proposing HMAC + nonce/signed-timestamp mitigations.
+- Recorded the attacker demonstration segment for the team video demo.
