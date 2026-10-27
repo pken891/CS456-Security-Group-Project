@@ -50,8 +50,41 @@ We selected a **Push-Based (Unidirectional Notification)** heartbeat model over 
 | **Missed-Beat Threshold** | $N$ | `3` missed beats | Allowing up to 3 consecutive missed beats prevents transient OS thread scheduling jitter or loopback buffer contention from triggering false-positive alerts. |
 | **Timeout Window (MTTD)** | $W$ | `3.0s` (`3000 ms`) | Calculated as $W = N \times T = 3.0\text{ seconds}$. This achieves a fast **Mean Time To Detect (MTTD) of 3.0 seconds**, ensuring rapid fault detection without alert fatigue. |
 
-### Wire Payload Schema (JSON over UDP)
+---
+## Resilient Security Systems – Part 2 (Recovery)
+
+### 👥 Team Members & Role Breakdown
+
+#### **Cameron Will** (`@CameronWill02`) – Monitor Failover Controller and Client
+* Turn `monitor.py` into the failover controller. It keeps the same 3-second detection, and after a crash it starts the standby automatically with `subprocess`. It logs timestamps for each step: `[Crash Detected] -> [Failover Triggered] -> [Service Restored]`.
+* Protect against split-brain. Before promoting the standby, make sure the old primary is really dead (check its PID and kill it if it’s still running). Never promote a second time while one failover is already in progress.
+* Write `client.py`. It sends logins and state queries, and it retries until it reconnects after failover by itself.
+* **Report:**
+  * The architecture diagram showing the Client, Primary, Standby, Monitor, and checkpoint file.
+  * The Redundancy Justification: why passive over active, covering sync overhead, complexity, and MTTR.
+
+#### **Cameron Hugg** (`@CameronHugg`) – Service, Replica and Checkpointing
+* Add dynamic state to `service.py`: session tickets, failed-login counts, and lockouts.
+* Add a client request socket.
+* Add `--role primary` and `--role standby` modes. The standby loads the checkpoint and takes over the client port. Heartbeats and the random crash stay the same.
+* Write `checkpoint.py`. The primary saves state after every change: write to a temporary file, then rename it. Add an HMAC or hash so the standby can detect tampering and refuse the checkpoint or fall back to the last good copy.
+* **Report:**
+  * The Execution & Setup Instructions, with exact commands for every script.
+
+#### **Peter Kenoian** (`@pken891`) – Auditor, Video and Final PDF
+* Update `attacker.py` with two attacks:
+  * **False failover:** Pause the primary with `kill -STOP` for more than 3 seconds, or block its heartbeats. Check whether two primaries end up running (split-brain).
+  * **Tampered checkpoint:** Corrupt the checkpoint, or add a fake admin session to it before failover. Check how the standby handles it.
+* **Report:**
+  * Write the Adversarial Audit Summary, and put the final PDF together.
+* **Video (under 3 minutes with voiceover):**
+  * A random crash.
+  * Automatic failover.
+  * The client getting correct pre-crash state back.
+* Submit the team items.
+
 ```json
+### Wire Payload Schema (JSON over UDP)
 {
   "type": "HEARTBEAT",
   "service": "auth-ticket-daemon",
@@ -59,3 +92,4 @@ We selected a **Push-Based (Unidirectional Notification)** heartbeat model over 
   "timestamp": 1729450000.123,
   "status": "HEALTHY"
 }
+---
