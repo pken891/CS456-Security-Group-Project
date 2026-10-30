@@ -273,7 +273,8 @@ def attack_split_brain(target_pid: int | None, freeze_seconds: float) -> None:
     if old_alive and len(after_procs) > 1:
         log("SPLIT-BRAIN", f"RESULT [VULNERABLE]: Split-Brain occurred! Original Primary (PID={target_pid}) "
                            f"and promoted Standby are both running concurrently.")
-    elif not old_alive and len(after_procs) == 1:
+    elif not old_alive and len(after_procs) <= 1:
+        promoted_info = f"Standby (PID={after_procs[0][0]})" if after_procs else "Standby"
         log("SPLIT-BRAIN", f"RESULT [PROTECTED]: Monitor killed stale Primary (PID={target_pid}) before promoting "
                            f"Standby (PID={after_procs[0][0]}). Split-brain prevented.")
     else:
