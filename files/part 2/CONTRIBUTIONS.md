@@ -6,7 +6,7 @@
 - Wrote client.py: demo and interactive modes, auto-retry during failover, post-failover state verification
 - Report: architecture diagram and Redundancy Justification
 
-Cameron Hugg — Service, Replica & Checkpointing
+## Cameron Hugg — Service, Replica & Checkpointing
 Extended service.py with dynamic state (session tickets, failed-login counts, lockouts) and the TCP client API on port 8000 defined in INTERFACE.md
 Added --role primary and --role standby: the standby loads the newest valid checkpoint (checkpoint.json, then checkpoint.json.bak, then empty state), takes over port 8000, and only then starts heartbeats; heartbeats and the random crash are unchanged from Part 1
 Wrote checkpoint.py: HMAC-SHA256 signed checkpoints written atomically (temp file + fsync + os.replace) after every state change, a last-good-copy .bak written from memory, tamper/corruption detection with fallback, and verify/show commands
